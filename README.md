@@ -7,13 +7,14 @@ triggers and analytical queries — all with **fictional** sample data.
 The goal is to demonstrate practical SQL Server / T-SQL skills (the kind asked
 for in junior .NET developer roles) in a small, realistic domain.
 
-> **Status:** the database layer (scripts `01`–`08`) is complete and verified
-> end-to-end on SQL Server (LocalDB / Docker). A .NET 8 API and xUnit tests are
-> planned — see [Roadmap](#roadmap).
+> **Status:** the database layer (scripts `01`–`08`) is complete and verified on
+> SQL Server LocalDB (SQL Server 2025). The Docker setup is provided but will be
+> validated by CI (planned). A .NET 8 API and xUnit tests are planned — see
+> [Roadmap](#roadmap).
 
 ## Tech
 
-- SQL Server 2019+ (verified on SQL Server 2025 LocalDB and the 2022 Docker image)
+- SQL Server: tested on SQL Server 2025 (LocalDB); intended for 2019+
 - Pure T-SQL: DDL, indexes, views, functions, stored procedures, triggers
 - Optional: Docker for a one-command local server
 
@@ -133,7 +134,7 @@ docker-compose.yml       SQL Server 2022 container
 
 ## Requirements
 
-- SQL Server 2019 or newer, with `sqlcmd` — **or** Docker
+- Tested on SQL Server 2025 (LocalDB); intended for 2019+, with `sqlcmd` — **or** Docker
 - Windows LocalDB works too (`SqlLocalDB`) with no extra install
 
 ## Quick start — provided server (Docker)
