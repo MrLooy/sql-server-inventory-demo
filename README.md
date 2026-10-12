@@ -12,7 +12,7 @@ for in junior .NET developer roles) in a small, realistic domain.
 > **Status:** the database layer (scripts `01`–`08`), the .NET 8 API and the
 > xUnit test suite are complete. Verified on SQL Server LocalDB (SQL Server 2025)
 > locally; the SQL Server 2022 **Docker container is validated by CI** —
-> [latest run](https://github.com/MrLooy/sql-server-inventory-demo/actions/runs/38218877887).
+> [see the CI status](https://github.com/MrLooy/sql-server-inventory-demo/actions/workflows/ci.yml).
 
 ## Tech
 
@@ -326,7 +326,7 @@ dotnet test tests/Inventory.Tests/Inventory.Tests.csproj
 The connection string is read from `ConnectionStrings__Inventory`, falling back to
 `CONNECTION_STRING`, then LocalDB. CI (`.github/workflows/ci.yml`) starts a
 **SQL Server 2022 container** and runs the same suite on every push —
-[latest run: 8/8 passed](https://github.com/MrLooy/sql-server-inventory-demo/actions/runs/38218877887).
+[CI status: passing](https://github.com/MrLooy/sql-server-inventory-demo/actions/workflows/ci.yml).
 
 ## Design notes
 
