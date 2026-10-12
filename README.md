@@ -7,10 +7,10 @@ triggers and analytical queries — all with **fictional** sample data.
 The goal is to demonstrate practical SQL Server / T-SQL skills (the kind asked
 for in junior .NET developer roles) in a small, realistic domain.
 
-> **Status:** the database layer (scripts `01`–`08`) is complete and verified on
-> SQL Server LocalDB (SQL Server 2025). The Docker setup is provided but will be
-> validated by CI (planned). A .NET 8 API and xUnit tests are planned — see
-> [Roadmap](#roadmap).
+> **Status:** the database layer (scripts `01`–`08`) and the .NET 8 API are
+> complete and verified on SQL Server LocalDB (SQL Server 2025). The Docker setup
+> is provided but will be validated by CI (planned). xUnit tests and the CI
+> workflow are planned — see [Roadmap](#roadmap).
 
 ## Tech
 
@@ -127,6 +127,7 @@ db/
   06_triggers.sql        AFTER trigger writing to AuditLog
   07_seed.sql            Fictional sample data (idempotent)
   08_demo_queries.sql    Analytical queries (CTE, window functions, PIVOT, JSON)
+src/Inventory.Api/       .NET 8 minimal API calling the stored procedures (ADO.NET)
 docs/ERD.md              Entity-relationship diagram (mermaid)
 docker-compose.yml       SQL Server 2022 container
 .env.example             Template for local secrets
@@ -136,6 +137,7 @@ docker-compose.yml       SQL Server 2022 container
 
 - Tested on SQL Server 2025 (LocalDB); intended for 2019+, with `sqlcmd` — **or** Docker
 - Windows LocalDB works too (`SqlLocalDB`) with no extra install
+- .NET 8 SDK (or newer) to build and run the API
 
 ## Quick start — provided server (Docker)
 
@@ -176,6 +178,75 @@ SELECT * FROM dbo.vw_LowStock;                          -- products at/below reo
 EXEC dbo.usp_LowStockReport;                            -- ranked low-stock report
 EXEC dbo.usp_GetProductMovementJson
      @From = '2020-01-01', @To = '2999-01-01';          -- JSON of all movements
+```
+
+## API (.NET 8 minimal API)
+
+A small ASP.NET Core **minimal API** exposes the stored procedures through
+ADO.NET (`Microsoft.Data.SqlClient`) — parameters are passed explicitly with
+`CommandType.StoredProcedure`, no ORM. It reads the connection string from
+`ConnectionStrings:Inventory` (see `src/Inventory.Api/appsettings.json`).
+Override it with the `ConnectionStrings__Inventory` environment variable (or
+`CONNECTION_STRING`) to point at Docker.
+
+```bash
+dotnet run --project src/Inventory.Api --urls http://localhost:5080
+```
+
+### Endpoints
+
+| Method | Route | Backing object |
+| --- | --- | --- |
+| GET  | `/health` | connectivity check |
+| GET  | `/products` | `dbo.Products` |
+| GET  | `/stock/{warehouseId}` | `dbo.vw_StockOnHand` |
+| GET  | `/reports/low-stock?categoryId=` | `dbo.usp_LowStockReport` |
+| GET  | `/reports/movements?from=&to=` | `dbo.usp_GetProductMovementJson` |
+| POST | `/purchase-orders/{id}/receive?movedBy=` | `dbo.usp_ReceivePurchaseOrder` |
+| POST | `/stock/adjust` | `dbo.usp_AdjustStock` |
+
+Business errors raised with `THROW` in the procedures are returned as
+`400 application/problem+json`.
+
+> **Demo only:** there is no authentication, and `movedBy` is a plain query
+> parameter — it is stored as-is and must not be trusted in a real system.
+
+### Examples (real responses, verified against LocalDB)
+
+`GET /reports/low-stock`
+```json
+[{"productId":5,"sku":"SKU-2003","productName":"27-inch Monitor","categoryName":"Peripherals","reorderLevel":6,"totalQuantity":3,"stockMargin":-3,"severityRank":1}]
+```
+
+`GET /stock/2` (first row)
+```json
+{"warehouseId":2,"warehouseCode":"WH-ARE","warehouseName":"Arequipa Warehouse","productId":1,"sku":"SKU-1001","productName":"Laptop Pro 14","categoryName":"Computers","quantity":6,"reorderLevel":5,"unitPrice":3500.00,"stockValue":21000.00,"updatedAt":"2026-10-12T07:30:42.448"}
+```
+
+`POST /purchase-orders/2/receive?movedBy=admin`
+```json
+{"poId":2,"poNumber":"PO-1001","status":"RECEIVED","linesTotal":2}
+```
+
+`POST /stock/adjust` with body
+`{"productId":1,"warehouseId":1,"qtyChange":7,"reason":"Manual adjust","movedBy":"admin"}`
+```json
+{"productId":1,"warehouseId":1,"newQuantity":24,"movementType":"ADJUST"}
+```
+
+`POST /stock/adjust` with `qtyChange = -9999` → `400`
+```json
+{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"Database validation error","status":400,"detail":"Adjustment would result in negative stock.","sqlErrorNumber":50013}
+```
+
+curl equivalents:
+
+```bash
+curl http://localhost:5080/reports/low-stock
+curl http://localhost:5080/stock/2
+curl -X POST "http://localhost:5080/purchase-orders/2/receive?movedBy=admin"
+curl -X POST http://localhost:5080/stock/adjust -H "Content-Type: application/json" \
+     -d '{"productId":1,"warehouseId":1,"qtyChange":7,"reason":"Manual adjust","movedBy":"admin"}'
 ```
 
 ## T-SQL techniques demonstrated
@@ -220,15 +291,16 @@ SKU-1001  ...08:00    8          8               1
 SKU-1001  ...09:30    -3         5               2
 ```
 
-**Low-stock ranking (`08`, Q3) / `dbo.vw_LowStock`:**
+**Low-stock ranking (`08`, Q3) / `dbo.vw_LowStock` / `dbo.usp_LowStockReport`:**
 
 ```
-Sku       ProductName         ReorderLevel  TotalQuantity  SeverityRank
---------  ------------------  ------------  -------------  ------------
-SKU-2003  27-inch Monitor     6             3              1
-SKU-1002  Laptop Air 13       4             4              2
-SKU-3003  Printer Toner Black 8             11             ...
+Sku       ProductName      ReorderLevel  TotalQuantity  StockMargin  SeverityRank
+--------  ---------------  ------------  -------------  -----------  ------------
+SKU-2003  27-inch Monitor  6             3              -3           1
 ```
+
+`StockMargin = TotalQuantity - ReorderLevel`: it is **negative** when the product
+is below its reorder level (the more negative, the more urgent).
 
 ## Design notes
 
@@ -242,9 +314,9 @@ SKU-3003  Printer Toner Black 8             11             ...
 
 ## Roadmap
 
-- **Phase 2:** a .NET 8 minimal Web API exposing the stored procedures.
-- **Phase 3:** xUnit integration tests and a GitHub Actions workflow that
-  spins up SQL Server in a container and runs the scripts + tests.
+- **Phase 2 — done:** a .NET 8 minimal Web API exposing the stored procedures.
+- **Phase 3 (planned):** xUnit integration tests and a GitHub Actions workflow
+  that spins up SQL Server in a container and runs the scripts + tests.
 
 ## License
 

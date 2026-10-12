@@ -44,7 +44,8 @@ SELECT
     c.Name                AS CategoryName,
     p.ReorderLevel,
     COALESCE(SUM(s.Quantity), 0) AS TotalQuantity,
-    COALESCE(SUM(s.Quantity), 0) - p.ReorderLevel AS UnitsBelowReorder
+    /* StockMargin = TotalQuantity - ReorderLevel; negative means below reorder level. */
+    COALESCE(SUM(s.Quantity), 0) - p.ReorderLevel AS StockMargin
 FROM dbo.Products AS p
 INNER JOIN dbo.Categories AS c ON c.CategoryId = p.CategoryId
 LEFT JOIN dbo.Stock AS s ON s.ProductId = p.ProductId

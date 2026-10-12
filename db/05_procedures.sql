@@ -199,7 +199,10 @@ BEGIN
         c.Name AS CategoryName,
         t.ReorderLevel,
         t.TotalQuantity,
-        t.TotalQuantity - t.ReorderLevel AS UnitsBelowReorder,
+        /* StockMargin = TotalQuantity - ReorderLevel.
+           A negative margin means the product is below its reorder level
+           (the more negative, the more urgent). */
+        t.TotalQuantity - t.ReorderLevel AS StockMargin,
         RANK() OVER (ORDER BY (t.TotalQuantity - t.ReorderLevel) ASC) AS SeverityRank
     FROM Totals AS t
     INNER JOIN dbo.Categories AS c ON c.CategoryId = t.CategoryId
