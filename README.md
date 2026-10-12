@@ -1,5 +1,7 @@
 # sql-server-inventory-demo
 
+[![CI](https://github.com/MrLooy/sql-server-inventory-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/MrLooy/sql-server-inventory-demo/actions/workflows/ci.yml)
+
 A SQL Server portfolio project: a normalized **inventory** database written in
 T-SQL, showcasing schema design, indexes, views, functions, stored procedures,
 triggers and analytical queries — all with **fictional** sample data.
@@ -7,10 +9,10 @@ triggers and analytical queries — all with **fictional** sample data.
 The goal is to demonstrate practical SQL Server / T-SQL skills (the kind asked
 for in junior .NET developer roles) in a small, realistic domain.
 
-> **Status:** the database layer (scripts `01`–`08`) and the .NET 8 API are
-> complete and verified on SQL Server LocalDB (SQL Server 2025). The Docker setup
-> is provided but will be validated by CI (planned). xUnit tests and the CI
-> workflow are planned — see [Roadmap](#roadmap).
+> **Status:** the database layer (scripts `01`–`08`), the .NET 8 API and the
+> xUnit test suite are complete. Verified on SQL Server LocalDB (SQL Server 2025)
+> locally; the SQL Server 2022 **Docker container is validated by CI** —
+> [latest run](https://github.com/MrLooy/sql-server-inventory-demo/actions/runs/38218877887).
 
 ## Tech
 
@@ -128,6 +130,8 @@ db/
   07_seed.sql            Fictional sample data (idempotent)
   08_demo_queries.sql    Analytical queries (CTE, window functions, PIVOT, JSON)
 src/Inventory.Api/       .NET 8 minimal API calling the stored procedures (ADO.NET)
+tests/Inventory.Tests/   xUnit integration tests (run the scripts, then assert)
+.github/workflows/ci.yml CI: SQL Server 2022 container + dotnet test
 docs/ERD.md              Entity-relationship diagram (mermaid)
 docker-compose.yml       SQL Server 2022 container
 .env.example             Template for local secrets
@@ -302,6 +306,28 @@ SKU-2003  27-inch Monitor  6             3              -3           1
 `StockMargin = TotalQuantity - ReorderLevel`: it is **negative** when the product
 is below its reorder level (the more negative, the more urgent).
 
+## Tests & CI
+
+Integration tests (`tests/Inventory.Tests`, xUnit) rebuild the database by running
+`db/01`–`07` and then exercise the repository against a **real** SQL Server:
+
+- catalog, stock view and low-stock report (`StockMargin`)
+- stock adjustment — valid increase, and rejected when it would go negative
+- receiving a purchase order — status change and stock increase
+- the `Products` audit trigger and the movements JSON
+
+Run them locally (SQL Server LocalDB):
+
+```powershell
+SqlLocalDB start MSSQLLocalDB
+dotnet test tests/Inventory.Tests/Inventory.Tests.csproj
+```
+
+The connection string is read from `ConnectionStrings__Inventory`, falling back to
+`CONNECTION_STRING`, then LocalDB. CI (`.github/workflows/ci.yml`) starts a
+**SQL Server 2022 container** and runs the same suite on every push —
+[latest run: 8/8 passed](https://github.com/MrLooy/sql-server-inventory-demo/actions/runs/38218877887).
+
 ## Design notes
 
 - There is **no Sales table**. Outbound movements are modeled as
@@ -314,9 +340,9 @@ is below its reorder level (the more negative, the more urgent).
 
 ## Roadmap
 
+- **Phase 1 — done:** SQL Server schema, indexes, views, functions, procedures, trigger and seed.
 - **Phase 2 — done:** a .NET 8 minimal Web API exposing the stored procedures.
-- **Phase 3 (planned):** xUnit integration tests and a GitHub Actions workflow
-  that spins up SQL Server in a container and runs the scripts + tests.
+- **Phase 3 — done:** xUnit integration tests and a GitHub Actions workflow running them against a SQL Server 2022 container.
 
 ## License
 
