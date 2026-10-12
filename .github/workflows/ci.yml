@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    name: Build & test against SQL Server
+    runs-on: ubuntu-latest
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: "Str0ng_Passw0rd!"
+        ports:
+          - 1433:1433
+
+    env:
+      ConnectionStrings__Inventory: "Server=127.0.0.1,1433;Database=InventoryDemo;User Id=sa;Password=Str0ng_Passw0rd!;TrustServerCertificate=True;Encrypt=False"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Wait for SQL Server to accept connections
+        run: |
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/1433) >/dev/null 2>&1; then
+              echo "SQL Server port 1433 is open"
+              exit 0
+            fi
+            echo "waiting for SQL Server... ($i)"
+            sleep 2
+          done
+          echo "timed out waiting for SQL Server"
+          exit 1
+
+      - name: Restore
+        run: dotnet restore tests/Inventory.Tests/Inventory.Tests.csproj
+
+      - name: Test
+        run: dotnet test tests/Inventory.Tests/Inventory.Tests.csproj -c Release --no-restore --logger "console;verbosity=normal"
