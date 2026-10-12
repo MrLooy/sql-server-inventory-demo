@@ -1,0 +1,35 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+.vs/
+
+# .NET
+*.dll
+*.pdb
+project.lock.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Test results / coverage
+[Tt]est[Rr]esult*/
+coverage*.xml
+coverage*.json
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# SQL Server artifacts
+*.mdf
+*.ldf
+*.bak
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

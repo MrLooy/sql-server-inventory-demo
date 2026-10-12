@@ -1,0 +1,250 @@
+# sql-server-inventory-demo
+
+A SQL Server portfolio project: a normalized **inventory** database written in
+T-SQL, showcasing schema design, indexes, views, functions, stored procedures,
+triggers and analytical queries — all with **fictional** sample data.
+
+The goal is to demonstrate practical SQL Server / T-SQL skills (the kind asked
+for in junior .NET developer roles) in a small, realistic domain.
+
+> **Status:** the database layer (scripts `01`–`08`) is complete and verified
+> end-to-end on SQL Server (LocalDB / Docker). A .NET 8 API and xUnit tests are
+> planned — see [Roadmap](#roadmap).
+
+## Tech
+
+- SQL Server 2019+ (verified on SQL Server 2025 LocalDB and the 2022 Docker image)
+- Pure T-SQL: DDL, indexes, views, functions, stored procedures, triggers
+- Optional: Docker for a one-command local server
+
+## Schema
+
+Ten tables, normalized to 3NF:
+
+`Categories`, `Suppliers`, `Warehouses`, `Products`, `Stock`,
+`StockMovements`, `PurchaseOrders`, `PurchaseOrderLines`, `AuditLog`
+plus the sequence `seq_PoNumber`.
+
+```mermaid
+erDiagram
+    Categories ||--o{ Products : "classifies"
+    Suppliers  ||--o{ PurchaseOrders : "supplies"
+    Warehouses ||--o{ Stock : "stores"
+    Products   ||--o{ Stock : "stocked as"
+    Products   ||--o{ StockMovements : "moves"
+    Warehouses ||--o{ StockMovements : "located in"
+    PurchaseOrders ||--o{ PurchaseOrderLines : "contains"
+    Products   ||--o{ PurchaseOrderLines : "ordered as"
+
+    Categories {
+        int         CategoryId PK
+        nvarchar80  Name
+        nvarchar300 Description
+        datetime2   CreatedAt
+    }
+    Suppliers {
+        int          SupplierId PK
+        nvarchar120  Name
+        nvarchar20   TaxId
+        nvarchar160  Email
+        nvarchar40   Phone
+        bit          IsActive
+        datetime2    CreatedAt
+    }
+    Warehouses {
+        int         WarehouseId PK
+        nvarchar10  Code
+        nvarchar80  Name
+        nvarchar80  City
+    }
+    Products {
+        int          ProductId PK
+        nvarchar30   Sku
+        nvarchar120  Name
+        int          CategoryId FK
+        decimal      UnitPrice
+        int          ReorderLevel
+        bit          IsActive
+        rowversion   RowVersion
+        datetime2    CreatedAt
+        datetime2    UpdatedAt
+    }
+    Stock {
+        int       WarehouseId PK
+        int       ProductId   PK
+        int       Quantity
+        datetime2 UpdatedAt
+    }
+    StockMovements {
+        bigint      MovementId PK
+        int         ProductId FK
+        int         WarehouseId FK
+        int         QtyChange
+        nvarchar10  MovementType
+        nvarchar200 Reason
+        nvarchar80  MovedBy
+        datetime2   MovedAt
+    }
+    PurchaseOrders {
+        int        PoId PK
+        nvarchar20 PoNumber
+        int        SupplierId FK
+        nvarchar10 Status
+        datetime2  CreatedAt
+        datetime2  ReceivedAt
+    }
+    PurchaseOrderLines {
+        int     PoId PK
+        int     LineNumber PK
+        int     ProductId FK
+        int     Quantity
+        decimal UnitCost
+        decimal LineTotal
+    }
+    AuditLog {
+        bigint      AuditId PK
+        nvarchar128 TableName
+        nvarchar10  Action
+        nvarchar200 KeyValue
+        nvarchar80  ChangedBy
+        datetime2   ChangedAt
+        nvarcharMAX Payload
+    }
+```
+
+A rendered version of the diagram is also kept in [`docs/ERD.md`](docs/ERD.md).
+
+## Repository structure
+
+```
+db/
+  01_schema.sql          Database + tables, constraints, sequence (DDL)
+  02_indexes.sql         Nonclustered, covering and filtered indexes
+  03_views.sql           Reporting views
+  04_functions.sql       Scalar UDF + inline table-valued function
+  05_procedures.sql      Stored procedures (transactions, TRY/CATCH, MERGE)
+  06_triggers.sql        AFTER trigger writing to AuditLog
+  07_seed.sql            Fictional sample data (idempotent)
+  08_demo_queries.sql    Analytical queries (CTE, window functions, PIVOT, JSON)
+docs/ERD.md              Entity-relationship diagram (mermaid)
+docker-compose.yml       SQL Server 2022 container
+.env.example             Template for local secrets
+```
+
+## Requirements
+
+- SQL Server 2019 or newer, with `sqlcmd` — **or** Docker
+- Windows LocalDB works too (`SqlLocalDB`) with no extra install
+
+## Quick start — provided server (Docker)
+
+```bash
+cp .env.example .env          # then set a strong MSSQL_SA_PASSWORD
+docker compose up -d          # starts mcr.microsoft.com/mssql/server:2022-latest
+```
+
+Load the database (run in order; scripts are idempotent and re-runnable):
+
+```bash
+docker exec -i inventorydemo-sqlserver \
+  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -b \
+  -i /dev/stdin < db/01_schema.sql
+# repeat 02..08 in order
+```
+
+## Quick start — LocalDB (Windows, no Docker)
+
+```powershell
+# Start the instance once
+SqlLocalDB start MSSQLLocalDB
+
+# Run every script in order (01..08)
+Get-ChildItem db\*.sql | Sort-Object Name | ForEach-Object {
+  sqlcmd -S "(localdb)\MSSQLLocalDB" -E -b -i $_.FullName
+}
+```
+
+Each script prints a `NN_... OK` line on success. They are safe to re-run:
+`01_schema.sql` recreates the objects and `07_seed.sql` reseeds the data.
+
+Quick checks:
+
+```sql
+SELECT COUNT(*) AS Products FROM dbo.Products;          -- 8
+SELECT * FROM dbo.vw_LowStock;                          -- products at/below reorder level
+EXEC dbo.usp_LowStockReport;                            -- ranked low-stock report
+EXEC dbo.usp_GetProductMovementJson
+     @From = '2020-01-01', @To = '2999-01-01';          -- JSON of all movements
+```
+
+## T-SQL techniques demonstrated
+
+| Technique | Where |
+| --- | --- |
+| Normalized schema, `PK`/`FK`, `CHECK`, `UNIQUE`, `DEFAULT` | `db/01_schema.sql` |
+| Composite primary key | `dbo.Stock`, `dbo.PurchaseOrderLines` |
+| `SEQUENCE` + default from sequence (`NEXT VALUE FOR`) | `dbo.seq_PoNumber` |
+| `ROWVERSION` optimistic-concurrency token | `dbo.Products` |
+| Persisted computed column | `dbo.PurchaseOrderLines.LineTotal` |
+| Nonclustered, covering (`INCLUDE`) and filtered indexes | `db/02_indexes.sql` |
+| Views | `db/03_views.sql` |
+| Scalar UDF + inline table-valued function | `db/04_functions.sql` |
+| Stored procedures: transactions, `TRY/CATCH`, `THROW`, `OUTPUT` parameters | `db/05_procedures.sql` |
+| `MERGE` (upsert) with documented pitfalls | `dbo.usp_UpsertSupplier` |
+| `AFTER` trigger writing JSON audit rows | `db/06_triggers.sql` |
+| CTE, window functions (`ROW_NUMBER`, `RANK`, running total) | `db/08_demo_queries.sql` |
+| `PIVOT` | `db/08_demo_queries.sql` |
+| `STRING_AGG`, `FOR JSON PATH`, `OPENJSON` | `db/08_demo_queries.sql` |
+| Conditional aggregation (`SUM(CASE ...)`) + `HAVING` | `db/08_demo_queries.sql` |
+| `TRY_CONVERT`, `EOMONTH`, `DATEADD` | `db/08_demo_queries.sql` |
+
+## Sample queries & expected output
+
+**PIVOT — stock per warehouse (`08`, Q4):**
+
+```
+ProductSku  WH-LIM  WH-ARE  TotalUnits
+----------  ------  ------  ----------
+SKU-1001    12      6       18
+SKU-2003    3       0       3
+SKU-3003    2       9       11
+```
+
+**Running total with a window function (`08`, Q2):**
+
+```
+Sku       MovedAt     QtyChange  RunningBalance  MovementNo
+--------  ----------  ---------  --------------  ----------
+SKU-1001  ...08:00    8          8               1
+SKU-1001  ...09:30    -3         5               2
+```
+
+**Low-stock ranking (`08`, Q3) / `dbo.vw_LowStock`:**
+
+```
+Sku       ProductName         ReorderLevel  TotalQuantity  SeverityRank
+--------  ------------------  ------------  -------------  ------------
+SKU-2003  27-inch Monitor     6             3              1
+SKU-1002  Laptop Air 13       4             4              2
+SKU-3003  Printer Toner Black 8             11             ...
+```
+
+## Design notes
+
+- There is **no Sales table**. Outbound movements are modeled as
+  `StockMovements` with `MovementType = 'OUT'` (issues, dispatches, orders),
+  so "sales"-style reports are derived from movements rather than a sales table.
+- `usp_ReceivePurchaseOrder` always receives into warehouse `1` for simplicity;
+  a production version would store a destination warehouse on the order.
+- `MERGE` is used to demonstrate upsert, but the documented concurrency
+  caveats are called out in the procedure header.
+
+## Roadmap
+
+- **Phase 2:** a .NET 8 minimal Web API exposing the stored procedures.
+- **Phase 3:** xUnit integration tests and a GitHub Actions workflow that
+  spins up SQL Server in a container and runs the scripts + tests.
+
+## License
+
+MIT — Copyright (c) 2026 Elías Canaquiri (MrLooy). See [LICENSE](LICENSE).
